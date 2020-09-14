@@ -28,6 +28,7 @@ import sai.imp.{RepNondet}
 
 import scala.collection.immutable.{List => SList}
 import scala.collection.immutable.{Map => SMap}
+import _root_.scalaz.Alpha.V
 
 @virtualize
 trait StagedSymExecEff extends SAIOps with RepNondet {
@@ -209,6 +210,7 @@ trait StagedSymExecEff extends SAIOps with RepNondet {
 
     def loc: Rep[Addr] = Wrap[Addr](Adapter.g.reflect("proj_LocV", Unwrap(v)))
     def int: Rep[Int] = Wrap[Int](Adapter.g.reflect("proj_IntV", Unwrap(v)))
+    def isBool: Rep[Int] = Wrap[Int](Adapter.g.reflect("isBool", Unwrap(v)))
     def fun: Rep[(SS, List[Value]) => List[(SS, Value)]] =
       Wrap[(SS, List[Value]) => List[(SS, Value)]](Unwrap(v))
 
@@ -310,6 +312,15 @@ trait StagedSymExecEff extends SAIOps with RepNondet {
           bs <- mapM(xs)(f)
         } yield b::bs
     }
+
+    def chooseConcSym(s: Rep[SS], cnd: Rep[Value], 
+      reflectConc: (Rep[SS], Rep[Value]) => Comp[E, Rep[Value]], 
+      reflectSym: (Rep[SS], Rep[Value]) => Comp[E, Rep[Value]]) = 
+    reflect( if (cnd.isBool == 1) {
+      reify(s)(reflectConc(s, cnd))
+    } else {
+      reify(s)(reflectSym(s, cnd))
+    })
   }
 
   // TODO: PhiInst, record branches in SS
@@ -462,32 +473,28 @@ trait StagedSymExecEff extends SAIOps with RepNondet {
         v <- eval(incs.head.value)
       } yield v 
       case SelectInst(cndTy, cndVal, thnTy, thnVal, elsTy, elsVal) =>
-        for {
-          cnd <- eval(cndVal)
-          v <- choice(
-            for {
-              _ <- updatePC(cnd.toSMT)
-              v <- eval(thnVal)
-            } yield v,
-            for {
-              _ <- updatePC(/* not */cnd.toSMT)
-              v <- eval(elsVal)
-            } yield v
-          )
-        } yield v
-        /*
+        def reflectConc(s: Rep[SS], cnd: Rep[Value]) = reflect(if (cnd.int == 1) {
+          reify(s)(eval(thnVal))
+        } else {
+          reify(s)(eval(elsVal))
+        })
+
+        def reflectChoice(s: Rep[SS], cnd: Rep[Value]) = choice(
+          for {
+            _ <- updatePC(cnd.toSMT)
+            v <- eval(thnVal)
+          } yield v,
+          for {
+            _ <- updatePC(/* not */cnd.toSMT)
+            v <- eval(elsVal)
+          } yield v
+        )
+
         for {
           cnd <- eval(cndVal)
           s <- getState
-          v <- {
-            reflect(if (cnd.int == 1) {
-              reify(s)(eval(thnVal))
-            } else {
-              reify(s)(eval(elsVal))
-            })
-          }
+          v <- chooseConcSym(s, cnd, reflectConc, reflectChoice)  
         } yield v
-         */
     }
   }
 
@@ -502,34 +509,29 @@ trait StagedSymExecEff extends SAIOps with RepNondet {
         execBlock(funName, lab)
       case CondBrTerm(ty, cnd, thnLab, elsLab) =>
         // TODO: needs to consider the case wehre cnd is a concrete value
-        // val cndM: Rep[SMTExpr] = ???
-        for {
-          cndVal <- eval(cnd)(funName)
-          v <- choice(
-            for {
-              _ <- updatePC(cndVal.toSMT)
-              v <- execBlock(funName, thnLab)
-            } yield v,
-            for {
-              _ <- updatePC(/* not */cndVal.toSMT)
-              // update branches
-              v <- execBlock(funName, elsLab)
-            } yield v)
-        } yield v
-        /*
-        // Temp: concrete execution below:
+        def reflectConc(s: Rep[SS], cnd: Rep[Value]) = reflect(if (cnd.int == 1) {
+          reify(s)(execBlock(funName, thnLab))
+        } else {
+          reify(s)(execBlock(funName, elsLab))
+        })
+
+        def reflectChoice(s: Rep[SS], cnd: Rep[Value]) = choice(
+          for {
+            _ <- updatePC(cnd.toSMT)
+            v <- execBlock(funName, thnLab)
+          } yield v,
+          for {
+            _ <- updatePC(/* not */cnd.toSMT)
+            // update branches
+            v <- execBlock(funName, elsLab)
+          } yield v)
+  
         for {
           cndVal <- eval(cnd)(funName)
           s <- getState
-          v <- {
-            reflect(if (cndVal.int == 1) {
-              reify(s)(execBlock(funName, thnLab))
-            } else {
-              reify(s)(execBlock(funName, elsLab))
-            })
-          }
+          v <- chooseConcSym(s, cndVal, reflectConc, reflectChoice)  
         } yield v
-         */
+
       case SwitchTerm(cndTy, cndVal, default, table) =>
         // TODO: cndVal can be either concrete or symbolic
         // TODO: if symbolic, update PC here, for default, take the negation of all other conditions
@@ -800,15 +802,15 @@ object TestStagedLLVM {
     val code = specialize(multipath, "@f")
     //val code = specialize(maze, "@main")
 
-    /*
+
     code.save("gen/maze.cpp")
     println(code.code)
     code.compile("gen/maze.cpp")
-     */
-    val res = sai.evaluation.utils.Utils.time {
-      code.save("gen/multipath_1048576.cpp")
-    }
-    println(res)
+
+    // val res = sai.evaluation.utils.Utils.time {
+    //   code.save("gen/multipath_1048576.cpp")
+    // }
+    // println(res)
     //code.compile("gen/multipath_1024.cpp")
 
     // testArrayAccess
