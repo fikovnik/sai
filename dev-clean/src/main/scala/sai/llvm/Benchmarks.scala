@@ -2,7 +2,7 @@ package sai.llvm
 
 import sai.lang.llvm._
 import sai.lang.llvm.IR._
-import sai.lang.llvm.Parser._
+import sai.lang.llvm.ParserLLVM._
 
 object Benchmarks {
   val maze = parseFile("benchmarks/llvm/maze.ll")

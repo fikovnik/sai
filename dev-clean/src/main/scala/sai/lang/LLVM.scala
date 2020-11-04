@@ -1325,7 +1325,7 @@ class MyVisitor extends LLVMParserBaseVisitor[LAST] {
   }
 }
 
-object Parser {
+object ParserLLVM {
   def parse(input: String): Module = {
     val charStream = new ANTLRInputStream(input)
     val lexer = new LLVMLexer(charStream)
@@ -1359,7 +1359,7 @@ object PPrinter {
   }
 
   def printAst(input: String): Unit = {
-    Parser.parse(input).es foreach {u => u match {
+    ParserLLVM.parse(input).es foreach {u => u match {
       case FunctionDef(id, linkage, metadata, header, body) =>
         println(s"Fundef: id: ${id}; linkage: ${linkage}; metadata: ${metadata};\n FunctionHeader: ${header}")
         body.blocks foreach(printBB(_))
