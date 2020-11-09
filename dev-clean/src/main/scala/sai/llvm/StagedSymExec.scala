@@ -251,6 +251,8 @@ trait StagedSymExecEff extends SAIOps with RepNondet {
       Wrap[SMTExpr](Adapter.g.reflect("proj_SMTExpr", Unwrap(v)))
     def toSMTBool: Rep[SMTBool] =
       Wrap[SMTBool](Adapter.g.reflect("proj_SMTBool", Unwrap(v)))
+
+    def bv_sext(bw: Rep[Int]): Rep[Value] = Wrap[Value](Adapter.g.reflect("bv_sext", Unwrap(v), Unwrap(bw)))
   }
 
   object CompileTimeRuntime {
@@ -300,12 +302,13 @@ trait StagedSymExecEff extends SAIOps with RepNondet {
     def findFundef(fname: String) = funMap.get(fname).get
   }
 
-  // how to make symbolic?
   object Primitives extends java.io.Serializable {
 
     def __make_symbolic(s: Rep[SS], args: Rep[List[Value]]) = {
       Wrap[List[(SS, Value)]](Adapter.g.reflect("make_symbolic", Unwrap(s), Unwrap(args)))
     }
+    // Function make_symbolic(LocV l, IntV len, IntV bw)
+    // This function will make from LocV l, len numbers of elements to symbolic bit vector of bitwidth bw 
     def make_symbolic: Rep[Value] = FunV(topFun(__make_symbolic))
 
     def __printf(s: Rep[SS], args: Rep[List[Value]]): Rep[List[(SS, Value)]] = {
@@ -489,7 +492,7 @@ trait StagedSymExecEff extends SAIOps with RepNondet {
       // TODO return original for symbolic
       case SExtInst(from, value, to) =>  for {
         v <- eval(value)
-      } yield v
+      } yield v.bv_sext(to.asInstanceOf[IntType].size)
       case CallInst(ty, f, args) => 
         val argValues: List[LLVMValue] = args.map {
           case TypedArg(ty, attrs, value) => value
